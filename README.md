@@ -1,5 +1,7 @@
 # Market-Making Simulator (Python)
 
+![tests](https://github.com/cathy1ee/market-making-simulator/actions/workflows/tests.yml/badge.svg)
+
 Simulates a market maker quoting a bid and an ask. It compares three quoting strategies on identical simulated markets, across 81 combinations of volatility, order flow and risk aversion.
 
 ## Strategies

@@ -57,7 +57,7 @@ Regime-switching market (volatility flips at random between 1 and 4; `inventory`
 
 When volatility is estimated online, the strategy gains Sharpe at low and moderate risk aversion (γ = 0.05 and 0.1). At high risk aversion (γ = 0.5) it backfires: noise in the volatility estimate gets amplified by γσ², so spreads blow out and fills dry up. The lesson is that an adaptive estimator needs smoothing or caps when the strategy is sensitive to it.
 
-**Performance:** vectorizing across paths with NumPy is 25× faster than a pure-Python loop (0.66s → 0.026s for 1,000 sessions), with identical results (max difference 3e-13).
+**Performance:** vectorizing across paths with NumPy is 28× faster than a pure-Python loop (0.68s → 0.024s for 1,000 sessions), with identical results (max difference 3e-13).
 
 ## Layout
 

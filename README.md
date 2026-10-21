@@ -39,8 +39,8 @@ python run_experiments.py     # all experiments (~20s), writes results/*.csv
 
 These results match the paper: inventory-aware quoting gives up a little profit and roughly halves the risk.
 
-**Across all 81 configurations**, compared with fixed quoting, inventory-aware quoting:
-- had a higher Sharpe ratio in 81 of 81 configurations (median **1.8×**)
+Across all 81 configurations, compared with fixed quoting, inventory-aware quoting:
+- had a higher Sharpe ratio in 81 of 81 configurations (median 1.8×)
 - cut P&L standard deviation by a median of 50%
 - cut max drawdown by a median of 76%
 - earned a median of 93.5% of fixed quoting's mean P&L

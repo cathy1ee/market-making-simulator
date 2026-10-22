@@ -51,10 +51,14 @@ Regime-switching market (volatility flips at random between 1 and 4; `inventory`
 
 | γ | Strategy | Sharpe | Avg max drawdown |
 |---|---|---:|---:|
+| 0.05 | fixed | 3.3 | 10.2 |
+| 0.05 | inventory | 5.4 | 5.1 |
+| 0.05 | adaptive | 7.7 | 2.4 |
 | 0.1 | fixed | 3.4 | 9.9 |
 | 0.1 | inventory | 6.6 | 3.7 |
-| 0.1 | adaptive | **7.6** | **1.8** |
-| 0.5 | inventory | **8.5** | 1.8 |
+| 0.1 | adaptive | 7.6 | 1.8 |
+| 0.5 | fixed | 3.4 | 9.9 |
+| 0.5 | inventory | 8.5 | 1.8 |
 | 0.5 | adaptive | 3.5 | 1.6 |
 
 When volatility is estimated online, the strategy gains Sharpe at low and moderate risk aversion (γ = 0.05 and 0.1). At high risk aversion (γ = 0.5) it backfires: noise in the volatility estimate gets amplified by γσ², so spreads blow out and fills dry up. The lesson is that an adaptive estimator needs smoothing or caps when the strategy is sensitive to it.

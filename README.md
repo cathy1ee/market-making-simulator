@@ -23,7 +23,7 @@ Simulates a market maker quoting a bid and an ask. It compares three quoting str
 ## Run
 
 ```bash
-pip install numpy pandas
+pip install -r requirements.txt
 python test_mmsim.py          # tests
 python run_experiments.py     # all experiments (~20s), writes results/*.csv
 ```

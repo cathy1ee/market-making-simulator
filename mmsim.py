@@ -76,6 +76,16 @@ def make_draws(p: Params, n_paths: int, seed: int) -> Draws:
     return Draws(rng.standard_normal(shape), rng.random(shape), rng.random(shape), rng.random(shape))
 
 
+def quote(strategy: str, p: Params, mid, inv, sig2, tau: float, fixed_h: float):
+    """Bid and ask for one step. Works on scalars or arrays; shared by `simulate` and `live`.
+    `sig2` is the variance the strategy believes in (known for `inventory`, estimated for `adaptive`)."""
+    if strategy == "fixed":
+        return mid - fixed_h, mid + fixed_h
+    reservation = mid - inv * p.gamma * sig2 * tau          # skew quotes against inventory
+    half = 0.5 * (p.gamma * sig2 * tau + (2.0 / p.gamma) * np.log1p(p.gamma / p.k))
+    return reservation - half, reservation + half
+
+
 def simulate(strategy: str, p: Params, draws: Draws) -> dict[str, np.ndarray]:
     """Run one strategy over every path in `draws`. Returns per-path results as arrays."""
     if strategy not in STRATEGIES:
@@ -98,13 +108,8 @@ def simulate(strategy: str, p: Params, draws: Draws) -> dict[str, np.ndarray]:
         tau = p.T - i * dt
 
         # --- 1. choose quotes ---
-        if strategy == "fixed":
-            bid, ask = mid - fixed_h, mid + fixed_h
-        else:
-            sig2 = p.sigma**2 if strategy == "inventory" else var_hat
-            reservation = mid - inv * p.gamma * sig2 * tau          # skew quotes against inventory
-            half = 0.5 * (p.gamma * sig2 * tau + (2.0 / p.gamma) * np.log1p(p.gamma / p.k))
-            bid, ask = reservation - half, reservation + half
+        sig2 = p.sigma**2 if strategy != "adaptive" else var_hat
+        bid, ask = quote(strategy, p, mid, inv, sig2, tau, fixed_h)
 
         # --- 2. market orders arrive and may fill us ---
         lam_bid = p.A * np.exp(-p.k * np.maximum(mid - bid, 0.0))

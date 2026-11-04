@@ -34,11 +34,11 @@ python live.py --product ETH-USD --minutes 5   # paper-trade on live data
 
 `live.py` runs the same three strategies against Coinbase's public market data feed (no account or API key). Nothing is ever sent to the exchange: quotes are virtual and filled from real trades.
 
-- **Mid:** the real best-bid/best-ask midpoint, from the websocket `ticker` channel.
-- **Fills:** a real trade strictly *through* our bid fills one lot at our bid (and likewise for the ask). A trade exactly at our price does not, since we would be at the back of the queue. Each side fills at most once per quote refresh.
-- **Quotes** are post-only on the exchange's price grid, so they never cross the real book.
-- **Calibration:** the first `--warmup` seconds (default 60) are used to estimate σ (1-second mid changes) and A, k (a fit of trade intensity against distance from the mid). γ defaults to the value where the inventory-risk and order-flow parts of the spread are equal at the start (γσ²T = 2/k); set it with `--gamma`.
-- **Markout:** the mean mid move 5s after each fill, in our favour, per lot. Negative means adverse selection — the effect the simulator leaves out.
+- Mid: the real best-bid/best-ask midpoint, from the websocket `ticker` channel.
+- Fills: a real trade strictly *through* our bid fills one lot at our bid (and likewise for the ask). A trade exactly at our price does not, since we would be at the back of the queue. Each side fills at most once per quote refresh.
+- Quotes are post-only on the exchange's price grid, so they never cross the real book.
+- Calibration: the first `--warmup` seconds (default 60) are used to estimate σ (1-second mid changes) and A, k (a fit of trade intensity against distance from the mid). γ defaults to the value where the inventory-risk and order-flow parts of the spread are equal at the start (γσ²T = 2/k); set it with `--gamma`.
+- Markout: the mean mid move 5s after each fill, in our favour, per lot. Negative means adverse selection — the effect the simulator leaves out.
 
 ```bash
 python live.py --product ETH-USD --minutes 5 --record ticks.csv   # live, and save the feed
@@ -52,9 +52,9 @@ A short live sample (ETH-USD, 30s warm-up, 2 min session) shows why live data ma
 
 ## Results
 
-**Scale:** 81 market configurations (volatility × order flow × fill decay × risk aversion) × 3 strategies × 5,000 sessions gives 1.2M simulated sessions and 243M time steps, in about 18 seconds.
+Scale: 81 market configurations (volatility × order flow × fill decay × risk aversion) × 3 strategies × 5,000 sessions gives 1.2M simulated sessions and 243M time steps, in about 18 seconds.
 
-**Baseline** (σ=2, A=140, k=1.5, γ=0.1, the parameters from the original paper):
+Baseline (σ=2, A=140, k=1.5, γ=0.1, the parameters from the original paper):
 
 | Strategy | Mean P&L | P&L std | Sharpe (mean/std) | Avg max drawdown | Final inventory std |
 |---|---:|---:|---:|---:|---:|
@@ -85,7 +85,7 @@ Regime-switching market (volatility flips at random between 1 and 4; `inventory`
 
 When volatility is estimated online, the strategy gains Sharpe at low and moderate risk aversion (γ = 0.05 and 0.1). At high risk aversion (γ = 0.5) it backfires: noise in the volatility estimate gets amplified by γσ², so spreads blow out and fills dry up. The lesson is that an adaptive estimator needs smoothing or caps when the strategy is sensitive to it.
 
-**Performance:** vectorizing across paths with NumPy is 28× faster than a pure-Python loop (0.68s → 0.024s for 1,000 sessions), with identical results (max difference 3e-13).
+Performance: vectorizing across paths with NumPy is 28× faster than a pure-Python loop (0.68s → 0.024s for 1,000 sessions), with identical results (max difference 3e-13).
 
 ## Layout
 

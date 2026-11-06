@@ -7,14 +7,17 @@ same feed at the same time, so the comparison is still like-for-like:
 
   - the mid is the real best-bid/best-ask midpoint;
   - our quotes are virtual: no orders are ever sent. A real trade *through* our bid (strictly
-    below it) fills one lot at our bid, and a trade through our ask fills one lot at our ask.
-    A trade exactly at our price does not fill us, since we would be at the back of the queue.
-    Each side fills at most once per quote refresh, like one step of the simulator.
+    below it) fills us at our bid, and a trade through our ask fills us at our ask, for no more
+    than the size that really traded. A trade exactly at our price does not fill us, since we
+    would be at the back of the queue. Each side fills at most one lot per quote refresh, so
+    small trades give partial fills.
   - quotes are post-only on the exchange's price grid: we never cross the real book.
 
 Because fills come from real order flow, live data has the adverse selection the simulator
 lacks: a trade that sweeps through our bid is often followed by the mid moving lower. The
-`markout` column measures it: the average mid move after a fill, in our favour, per lot.
+`markout` column measures it: the mid a few seconds after a fill minus our fill price, in our
+favour, averaged per lot filled. It includes the spread we earned, so negative means the market
+moved against us by more than that spread.
 
 Model parameters are calibrated from a warm-up window of the same feed:
 
@@ -167,19 +170,22 @@ def auto_gamma(sigma: float, k: float, T: float) -> float:
 
 @dataclass
 class PaperMarketMaker:
-    """One strategy quoting against the live feed. Inventory is in lots, cash in the quote currency."""
+    """One strategy quoting against the live feed. Inventory is in lots (fractional after a
+    partial fill), cash in the quote currency."""
     strategy: str
     p: Params
     lot: float
     tick: float
     t0: float
     cash: float = 0.0
-    inv: int = 0
+    inv: float = 0.0
     bid: float | None = None
     ask: float | None = None
     peak: float = 0.0
     max_dd: float = 0.0
-    fills: list[tuple[float, int, float]] = field(default_factory=list)  # (time, +1 buy / -1 sell, price)
+    fills: list[tuple[float, int, float, float]] = field(default_factory=list)  # (time, +1 buy / -1 sell, price, lots)
+    _bid_left: float = 0.0  # lots still open on each resting quote
+    _ask_left: float = 0.0
     _var_hat: float = 0.0
     _last: tuple[float, float] | None = None  # (time, mid) at the previous requote
 
@@ -188,18 +194,24 @@ class PaperMarketMaker:
         self._fixed_h = (self.p.fixed_half_spread if self.p.fixed_half_spread is not None
                          else self.p.matched_fixed_half_spread())
 
-    def on_trade(self, t: float, price: float) -> None:
-        """A real trade printed at `price`: fill our resting quotes if it traded through them."""
+    def on_trade(self, t: float, price: float, size: float) -> None:
+        """A real trade of `size` printed at `price`: fill our resting quotes if it went through them."""
         if self.bid is not None and price < self.bid:
-            self.cash -= self.bid * self.lot
-            self.inv += 1
-            self.fills.append((t, +1, self.bid))
-            self.bid = None
+            lots = min(size / self.lot, self._bid_left)
+            self.cash -= self.bid * lots * self.lot
+            self.inv += lots
+            self._bid_left -= lots
+            self.fills.append((t, +1, self.bid, lots))
+            if self._bid_left <= 0:
+                self.bid = None
         if self.ask is not None and price > self.ask:
-            self.cash += self.ask * self.lot
-            self.inv -= 1
-            self.fills.append((t, -1, self.ask))
-            self.ask = None
+            lots = min(size / self.lot, self._ask_left)
+            self.cash += self.ask * lots * self.lot
+            self.inv -= lots
+            self._ask_left -= lots
+            self.fills.append((t, -1, self.ask, lots))
+            if self._ask_left <= 0:
+                self.ask = None
 
     def requote(self, t: float, best_bid: float, best_ask: float) -> None:
         mid = 0.5 * (best_bid + best_ask)
@@ -215,8 +227,11 @@ class PaperMarketMaker:
         # round() strips float noise like 100.10000000000001 so fill comparisons stay exact.
         bid = round(min(math.floor(bid / self.tick + 1e-9) * self.tick, best_ask - self.tick), 10)
         ask = round(max(math.ceil(ask / self.tick - 1e-9) * self.tick, best_bid + self.tick), 10)
-        self.bid = bid if self.inv < self.p.max_inventory else None
-        self.ask = ask if self.inv > -self.p.max_inventory else None
+        # One lot per side per refresh, or less if that would pass the position limit.
+        self._bid_left = min(1.0, self.p.max_inventory - self.inv)
+        self._ask_left = min(1.0, self.p.max_inventory + self.inv)
+        self.bid = bid if self._bid_left > 0 else None
+        self.ask = ask if self._ask_left > 0 else None
 
         pnl = self.mark(mid)
         self.peak = max(self.peak, pnl)
@@ -230,14 +245,15 @@ class PaperMarketMaker:
         times, values = mids
         markout = float("nan")
         if self.fills:
-            ft, side, px = (np.array(c) for c in zip(*self.fills))
+            ft, side, px, lots = (np.array(c) for c in zip(*self.fills))
             later = values[np.minimum(np.searchsorted(times, ft + horizon), len(values) - 1)]
-            markout = float(np.mean(side * (later - px)) * self.lot)
+            markout = float(np.average(side * (later - px), weights=lots) * self.lot)
         return {
             "strategy": self.strategy,
             "pnl": self.mark(mid),
             "max_drawdown": self.max_dd,
             "n_trades": len(self.fills),
+            "lots_filled": sum(f[3] for f in self.fills),
             "final_inventory": self.inv,
             f"markout_{horizon:g}s": markout,
         }
@@ -281,7 +297,7 @@ async def run(feed: AsyncIterator[Tick], strategies: Iterable[str], session: flo
                 continue
 
             for m in makers:
-                m.on_trade(tick.t, tick.price)  # trades hit the quotes that were resting before them
+                m.on_trade(tick.t, tick.price, tick.size)  # trades hit the quotes that were resting before them
             times.append(tick.t)
             mids.append(tick.mid)
             if tick.t >= t_next:
@@ -291,7 +307,7 @@ async def run(feed: AsyncIterator[Tick], strategies: Iterable[str], session: flo
             if verbose and tick.t - t_log >= 10:
                 t_log = tick.t
                 log(f"[{tick.t - t_start:5.0f}s] mid {tick.mid:.6g}  " + "  ".join(
-                    f"{m.strategy}: inv {m.inv:+d} pnl {m.mark(tick.mid):+.4g}" for m in makers))
+                    f"{m.strategy}: inv {m.inv:+.3g} pnl {m.mark(tick.mid):+.4g}" for m in makers))
             if tick.t - t_start >= session:
                 break
     except asyncio.CancelledError:
@@ -316,7 +332,7 @@ def main():
     ap.add_argument("--minutes", type=float, default=5.0, help="trading session length (default 5)")
     ap.add_argument("--warmup", type=float, default=60.0, help="seconds of data to calibrate on first (default 60)")
     ap.add_argument("--refresh", type=float, default=1.0, help="seconds between quote updates (default 1)")
-    ap.add_argument("--lot", type=float, default=1.0, help="size of one fill, in the base asset (default 1)")
+    ap.add_argument("--lot", type=float, default=1.0, help="largest fill per side per refresh, in the base asset (default 1)")
     ap.add_argument("--gamma", type=float, help="risk aversion per lot (default: chosen from the calibration)")
     ap.add_argument("--max-inventory", type=int, default=50, help="position limit in lots (default 50)")
     ap.add_argument("--strategies", nargs="+", choices=STRATEGIES, default=list(STRATEGIES))

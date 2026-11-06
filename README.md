@@ -35,10 +35,10 @@ python live.py --product ETH-USD --minutes 5   # paper-trade on live data
 `live.py` runs the same three strategies against Coinbase's public market data feed (no account or API key). Nothing is ever sent to the exchange: quotes are virtual and filled from real trades.
 
 - Mid: the real best-bid/best-ask midpoint, from the websocket `ticker` channel.
-- Fills: a real trade strictly *through* our bid fills one lot at our bid (and likewise for the ask). A trade exactly at our price does not, since we would be at the back of the queue. Each side fills at most once per quote refresh.
+- Fills: a real trade strictly *through* our bid fills us at our bid (and likewise for the ask), for no more than the size that really traded. A trade exactly at our price does not, since we would be at the back of the queue. Each side fills at most one lot per quote refresh.
 - Quotes are post-only on the exchange's price grid, so they never cross the real book.
 - Calibration: the first `--warmup` seconds (default 60) are used to estimate σ (1-second mid changes) and A, k (a fit of trade intensity against distance from the mid). γ defaults to the value where the inventory-risk and order-flow parts of the spread are equal at the start (γσ²T = 2/k); set it with `--gamma`.
-- Markout: the mean mid move 5s after each fill, in our favour, per lot. Negative means adverse selection — the effect the simulator leaves out.
+- Markout: the mid 5s after each fill minus our fill price, in our favour, averaged per lot filled. It includes the spread we earned, so a negative value means the market moved against us by more than that spread. This is adverse selection, the effect the simulator leaves out.
 
 ```bash
 python live.py --product ETH-USD --minutes 5 --record ticks.csv   # live, and save the feed
@@ -48,7 +48,7 @@ python live.py --help                                              # lot size, r
 
 Binance's API is blocked from US IP addresses, which is why the feed is Coinbase. Any Coinbase product id works; very tight books such as BTC-USD will fill rarely, because quotes wider than one tick need a trade to sweep through them.
 
-A short live sample (ETH-USD, 30s warm-up, 2 min session) shows why live data matters: the inventory-aware strategies quoted wider, so they were only filled by trades that swept the book, and those fills were followed by adverse moves (markout −0.12 per fill vs −0.03 for `fixed`). Two minutes is far too short to draw a conclusion; run longer sessions and several `--replay` files before comparing strategies.
+In one short live sample (ETH-USD, 30s warm-up, 2 min session, 1 ETH lots) all three strategies finished slightly negative (`fixed` −0.78, `inventory` −0.47, `adaptive` −0.44). `inventory` carried less risk, with a final position of 1.4 lots against 4.3 and a max drawdown of 1.7 against 4.6. Two minutes is far too short to draw a conclusion; run longer sessions and several `--replay` files before comparing strategies.
 
 ## Results
 
@@ -101,6 +101,6 @@ results/             CSV output
 ## Limitations and next steps
 - There is no adverse selection: order flow doesn't predict future price moves. Adding informed flow would penalize tight quoting.
 - Fills are all-or-nothing at one unit, with no queue position or partial fills.
-- `live.py` now replays real trades, but sees only the top of the book at each trade (no full depth or queue position) and fills one lot per side per refresh.
+- `live.py` uses real trades, but sees only the top of the book at each trade, with no full depth or queue position. It assumes we get the whole size of any trade through our quote, up to one lot per side per refresh, which is still optimistic.
 
 Reference: Avellaneda, M. & Stoikov, S. (2008). *High-frequency trading in a limit order book.* Quantitative Finance 8(3).

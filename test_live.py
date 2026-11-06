@@ -40,12 +40,33 @@ def test_fill_only_when_trade_goes_through_quote():
     m = maker(fixed_half_spread=0.10)
     m.requote(0.0, 99.99, 100.01)
     assert (m.bid, m.ask) == (99.90, 100.10)
-    m.on_trade(0.1, 99.90)            # at our price: behind the queue, no fill
+    m.on_trade(0.1, 99.90, 5.0)       # at our price: behind the queue, no fill
     assert m.inv == 0
-    m.on_trade(0.2, 99.89)            # through our price: filled one lot at our bid
+    m.on_trade(0.2, 99.89, 5.0)       # through our price: filled one lot at our bid
     assert m.inv == 1 and math.isclose(m.cash, -99.90)
-    m.on_trade(0.3, 99.50)            # that side is used up until the next requote
+    m.on_trade(0.3, 99.50, 5.0)       # that side is used up until the next requote
     assert m.inv == 1
+
+
+def test_fill_is_capped_by_the_real_trade_size():
+    m = maker(fixed_half_spread=0.10)
+    m.requote(0.0, 99.99, 100.01)
+    m.on_trade(0.1, 99.80, 0.25)      # a small trade only fills part of the lot
+    assert math.isclose(m.inv, 0.25) and math.isclose(m.cash, -0.25 * 99.90) and m.bid == 99.90
+    m.on_trade(0.2, 99.80, 5.0)       # a big one fills what is left, and no more
+    assert math.isclose(m.inv, 1.0) and m.bid is None
+
+
+def test_markout_is_weighted_by_size():
+    m = maker(fixed_half_spread=0.10)
+    m.requote(0.0, 99.99, 100.01)
+    m.on_trade(1.0, 99.80, 0.25)
+    m.requote(2.0, 99.99, 100.01)
+    m.on_trade(3.0, 99.80, 0.75)      # bought 0.25 and 0.75, both at 99.90
+    hist = (np.array([1.0, 3.0, 7.0, 9.0]), np.array([100.0, 100.0, 100.5, 99.5]))
+    r = m.summary(100.0, hist, horizon=5.0)
+    assert math.isclose(r["markout_5s"], 0.25 * (100.5 - 99.90) + 0.75 * (99.5 - 99.90))
+    assert math.isclose(r["lots_filled"], 1.0)
 
 
 def test_quotes_are_post_only_on_the_price_grid():
@@ -59,8 +80,8 @@ def test_position_limit_stops_quoting_that_side():
     m = maker(fixed_half_spread=0.10, max_inventory=2)
     for i in range(5):
         m.requote(float(i), 99.99, 100.01)
-        m.on_trade(i + 0.5, 90.0)
-    assert m.inv == 2 and m.bid is None and m.ask is not None
+        m.on_trade(i + 0.5, 90.0, 0.75)   # fractional fills must not overshoot the limit
+    assert math.isclose(m.inv, 2.0) and m.bid is None and m.ask is not None
 
 
 def test_calibration_recovers_volatility():

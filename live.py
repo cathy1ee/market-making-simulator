@@ -94,7 +94,7 @@ async def coinbase_ticks(product: str) -> AsyncIterator[Tick]:
                         continue
                     yield Tick(parse_time(m["time"]), float(m["best_bid"]), float(m["best_ask"]),
                                float(m["price"]), float(m.get("last_size") or 0.0))
-        except (OSError, websockets.ConnectionClosed) as e:
+        except (OSError, websockets.WebSocketException) as e:
             print(f"feed disconnected ({e}); reconnecting in {backoff:.0f}s", file=sys.stderr)
             await asyncio.sleep(backoff)
             backoff = min(2 * backoff, 30.0)
@@ -294,6 +294,10 @@ async def run(feed: AsyncIterator[Tick], strategies: Iterable[str], session: flo
                     f"{m.strategy}: inv {m.inv:+d} pnl {m.mark(tick.mid):+.4g}" for m in makers))
             if tick.t - t_start >= session:
                 break
+    except asyncio.CancelledError:
+        if not makers:
+            raise
+        log("\nStopped early.")  # Ctrl-C: keep what we have and fall through to the summary
     finally:
         if rec_file:
             rec_file.close()

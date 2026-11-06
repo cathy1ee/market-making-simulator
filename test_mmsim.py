@@ -1,7 +1,7 @@
 """Run with: python -m pytest -q   (or just: python test_mmsim.py)"""
 import numpy as np
 
-from mmsim import Params, make_draws, simulate, simulate_loop
+from mmsim import Params, make_draws, pnl_after_exit, simulate, simulate_loop
 
 
 def test_vectorized_matches_reference_loop():
@@ -28,6 +28,12 @@ def test_inventory_quoting_reduces_risk():
     p = Params()
     d = make_draws(p, 2000, seed=4)
     assert simulate("inventory", p, d)["pnl"].std() < simulate("fixed", p, d)["pnl"].std()
+
+
+def test_exit_cost_charges_leftover_inventory_only():
+    res = {"pnl": np.array([10.0, 10.0, 10.0]), "final_inventory": np.array([0.0, 4.0, -4.0])}
+    assert np.allclose(pnl_after_exit(res, 0.5), [10.0, 8.0, 8.0])
+    assert np.allclose(pnl_after_exit(res, 0.0), res["pnl"])
 
 
 if __name__ == "__main__":

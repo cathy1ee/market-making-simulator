@@ -18,7 +18,7 @@ Simulates a market maker quoting a bid and an ask. It compares three quoting str
 - **Order flow:** the chance that a market order hits our quote falls off exponentially with the quote's distance δ from the mid: `λ(δ) = A·e^(−kδ)`. A is the amount of order flow, and k is how fast it thins out.
 - **Inventory-aware quoting:** the strategy quotes around a reservation price `r = mid − q·γ·σ²·(T−t)` instead of the mid. Here q is inventory and γ is risk aversion. When long, it lowers both quotes, which makes it more likely to sell and less likely to buy. The half-spread is `½[γσ²(T−t) + (2/γ)·ln(1 + γ/k)]`.
 - **Position limit:** 50 units. At the limit the strategy stops quoting that side.
-- **P&L:** cash plus inventory marked to the final mid. Drawdown is measured on mark-to-market P&L at every step.
+- **P&L:** cash plus inventory marked to the final mid. Drawdown is measured on mark-to-market P&L at every step. Published results assume closing leftover inventory is free; the exit cost table below shows what happens when it is not.
 
 ## Run
 
@@ -68,6 +68,17 @@ Across all 81 configurations, compared with fixed quoting, inventory-aware quoti
 - cut P&L standard deviation by a median of 50%
 - cut max drawdown by a median of 76%
 - earned a median of 93.5% of fixed quoting's mean P&L
+
+Exit cost: the tables here mark leftover inventory at the final mid for free, which flatters `fixed` because it ends with a larger position (mean absolute 6.4 units vs 2.3). Charging a cost per unit to close it, on the same baseline markets:
+
+| Exit cost per unit | `fixed` mean P&L | `fixed` Sharpe | `inventory` mean P&L | `inventory` Sharpe |
+|---|---:|---:|---:|---:|
+| 0 | 60.8 | 4.8 | 57.1 | 8.9 |
+| 0.37 (½ half-spread) | 58.4 | 4.6 | 56.2 | 8.8 |
+| 0.75 (1 half-spread) | 56.0 | 4.3 | 55.3 | 8.5 |
+| 1.49 (2 half-spreads) | 51.3 | 3.5 | 53.6 | 7.8 |
+
+`fixed` keeps its higher mean P&L only while the cost is below about 0.92 per unit (1.2 half-spreads). Above that, `inventory` wins on both mean P&L and Sharpe.
 
 Regime-switching market (volatility flips at random between 1 and 4; `inventory` assumes σ=1):
 

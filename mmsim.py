@@ -181,6 +181,12 @@ def simulate_loop(strategy: str, p: Params, draws: Draws) -> np.ndarray:
     return out
 
 
+def pnl_after_exit(res: dict[str, np.ndarray], exit_cost: float) -> np.ndarray:
+    """Terminal P&L if closing leftover inventory costs `exit_cost` per unit (e.g. crossing a half-spread).
+    Closing happens after the session, so it needs no re-simulation and quoting is unaffected."""
+    return res["pnl"] - exit_cost * np.abs(res["final_inventory"])
+
+
 def summarize(res: dict[str, np.ndarray]) -> dict[str, float]:
     pnl = res["pnl"]
     return {

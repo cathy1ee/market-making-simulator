@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from mmsim import STRATEGIES, Params, make_draws, simulate, simulate_loop, summarize, with_
+from mmsim import STRATEGIES, Params, make_draws, pnl_after_exit, simulate, simulate_loop, summarize, with_
 
 OUT = Path(__file__).parent / "results"
 
@@ -45,6 +45,22 @@ def regime_test(n_paths: int) -> pd.DataFrame:
         draws = make_draws(p, n_paths, seed=999 + round(gamma * 100))
         for strat in STRATEGIES:
             rows.append({"gamma": gamma, "strategy": strat, **summarize(simulate(strat, p, draws))})
+    return pd.DataFrame(rows)
+
+
+def exit_cost_test(n_paths: int) -> pd.DataFrame:
+    """Baseline P&L if closing leftover inventory costs a multiple of the fixed half-spread per unit.
+    Seed 40 is the baseline's index in `parameter_sweep`, so these are the same simulated markets."""
+    p = Params()
+    draws = make_draws(p, n_paths, seed=40)
+    half = p.matched_fixed_half_spread()
+    rows = []
+    for strat in STRATEGIES:
+        res = simulate(strat, p, draws)
+        for mult in [0.0, 0.5, 1.0, 2.0]:
+            pnl = pnl_after_exit(res, mult * half)
+            rows.append({"half_spreads": mult, "exit_cost": mult * half, "strategy": strat, "mean_pnl": pnl.mean(),
+                         "std_pnl": pnl.std(ddof=1), "sharpe": pnl.mean() / pnl.std(ddof=1)})
     return pd.DataFrame(rows)
 
 
@@ -113,6 +129,11 @@ def main():
     reg.to_csv(OUT / "regime.csv", index=False)
     print("Regime-switching market (vol flips between 1 and 4):")
     print(reg[["gamma", "strategy", "mean_pnl", "std_pnl", "sharpe", "mean_max_drawdown"]].round(3).to_string(index=False), "\n")
+
+    ex = exit_cost_test(n)
+    ex.to_csv(OUT / "exit_cost.csv", index=False)
+    print("Exit cost on leftover inventory (baseline, cost in fixed half-spreads per unit):")
+    print(ex.round(3).to_string(index=False), "\n")
 
     sp = speed_and_correctness(200 if args.quick else 1000)
     pd.Series(sp).to_csv(OUT / "speed.csv", header=["value"])

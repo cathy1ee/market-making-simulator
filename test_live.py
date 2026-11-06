@@ -1,10 +1,14 @@
 """Offline tests for live.py, on synthetic ticks (no network). Run with: python test_live.py"""
 import asyncio
+import json
 import math
 
 import numpy as np
 
-from live import PaperMarketMaker, Tick, calibrate, run
+import websockets
+
+import live
+from live import PaperMarketMaker, Tick, calibrate, coinbase_ticks, run
 from mmsim import Params
 
 
@@ -73,6 +77,65 @@ def test_run_end_to_end_is_deterministic():
     b = asyncio.run(run(as_feed(ticks), **kw))
     assert a == b and [r["strategy"] for r in a] == list(kw["strategies"])
     assert all(r["n_trades"] > 0 and abs(r["final_inventory"]) <= 50 for r in a)
+
+
+def test_feed_retries_when_the_handshake_fails():
+    # e.g. an HTTP 503 while reconnecting, which is not an OSError or ConnectionClosed.
+    message = json.dumps({"type": "ticker", "time": "2026-11-03T16:10:08.934779Z", "best_bid": "99.99",
+                          "best_ask": "100.01", "price": "100.00", "last_size": "0.5"})
+
+    class FakeSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def send(self, _):
+            pass
+
+        async def __aiter__(self):
+            yield message
+
+    attempts = []
+
+    def connect(*_, **__):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise websockets.InvalidHandshake("server rejected the connection")
+        return FakeSocket()
+
+    async def no_wait(_):
+        pass
+
+    async def first_tick():
+        async for tick in coinbase_ticks("ETH-USD"):
+            return tick
+
+    real_connect, real_sleep = websockets.connect, live.asyncio.sleep
+    websockets.connect, live.asyncio.sleep = connect, no_wait
+    try:
+        tick = asyncio.run(first_tick())
+    finally:
+        websockets.connect, live.asyncio.sleep = real_connect, real_sleep
+    assert len(attempts) == 2 and tick.price == 100.0
+
+
+def test_stopping_early_still_returns_a_summary():
+    async def stalls_after(ticks):
+        for t in ticks:
+            yield t
+        await asyncio.Event().wait()
+
+    async def main():
+        task = asyncio.create_task(run(stalls_after(synthetic_ticks(600)), ("fixed",), session=1500.0, warmup=300.0,
+                                       refresh=1.0, lot=1.0, gamma=None, max_inventory=50, verbose=False))
+        await asyncio.sleep(0.2)
+        task.cancel()
+        return await task
+
+    rows = asyncio.run(main())
+    assert rows[0]["strategy"] == "fixed" and rows[0]["n_trades"] > 0
 
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ def regime_test(n_paths: int) -> pd.DataFrame:
     rows = []
     for gamma in [0.05, 0.1, 0.5]:
         p = Params(sigma=1.0, sigma_high=4.0, p_switch=0.02, gamma=gamma)
-        draws = make_draws(p, n_paths, seed=999 + int(gamma * 100))
+        draws = make_draws(p, n_paths, seed=999 + round(gamma * 100))
         for strat in STRATEGIES:
             rows.append({"gamma": gamma, "strategy": strat, **summarize(simulate(strat, p, draws))})
     return pd.DataFrame(rows)
